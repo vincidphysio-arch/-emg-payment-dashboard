@@ -45,7 +45,7 @@ def create_payment_timeline(payments_df, work_df):
         ))
     
     # Add today line
-        if fig.data:  # Only add vline if there's data
+    if fig.data:  # Only add vline if there's data
         fig.add_vline(
             x=datetime.now(),
             line_dash="dash",
