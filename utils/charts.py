@@ -52,8 +52,8 @@ def create_payment_timeline(payments_df, work_df):
             line_color="red",
             annotation_text="Today"
         )
-            except Exception:  # Skip vline if any error occurs
-        pass
+    except Exception:  # Skip vline if any error occurs
+            pass
     
     fig.update_layout(
         title="Payment Timeline - Past, Present & Future",
