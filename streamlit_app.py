@@ -11,12 +11,7 @@ st.set_page_config(page_title="EMG Payment Dashboard", page_icon="💰", layout=
 # Custom CSS for colorful cards
 st.markdown("""
 <style>
-    .metric-card {
-        padding: 20px;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-    }
+    .metric-card { padding: 20px; border-radius: 10px; color: white; text-align: center; }
     .card-teal { background: linear-gradient(135deg, #20B2AA, #008B8B); }
     .card-purple { background: linear-gradient(135deg, #9370DB, #6B48FF); }
     .card-blue { background: linear-gradient(135deg, #4169E1, #1E90FF); }
@@ -32,7 +27,7 @@ with st.sidebar:
     st.title("Navigation")
     page = st.radio("", ["🏠 Home", "🏥 Kitchener Tracker", "🏛️ London Tracker", "💸 Expense Tracker", "📈 Future Income", "📊 Tax Center"], label_visibility="collapsed")
 
-# Cached data loading function
+# Cached data loading
 @st.cache_data(ttl=300)
 def get_all_data():
     try:
@@ -42,20 +37,18 @@ def get_all_data():
     except Exception as e:
         return pd.DataFrame(), pd.DataFrame(), str(e)
 
-# Load data with caching
 payments_df, master_df, load_error = get_all_data()
 
-# Refresh button
 if st.button("🔄 Refresh Data"):
     st.cache_data.clear()
     st.rerun()
 
 if load_error:
     st.error(f"Error loading data: {load_error}")
-    st.info("Please wait a moment and click Refresh Data to try again.")
+    st.info("Please wait and click Refresh Data.")
     st.stop()
 
-# Define location filters
+# Location filters
 KITCHENER_DOCTORS = ['Dr. Tripic', 'Dr. Cartagena']
 LONDON_DOCTORS = ['Dr. Tugalov']
 
@@ -63,28 +56,49 @@ def filter_by_location(df, doctors):
     if df.empty: return df
     return df[df['Doctor'].isin(doctors)] if 'Doctor' in df.columns else df
 
-def safe_metrics(payments, master):
+def get_metrics(payments, master):
+    """Calculate metrics from payment data"""
+    metrics = {'total_received': 0, 'pending': 0, 'projected': 0, 'avg_payment': 0, 'month_received': 0}
+    if payments.empty:
+        return metrics
     try:
-        return calculate_metrics(payments, master)
-    except:
-        return {'total_received': 0, 'pending': 0, 'projected': 0, 'avg_payment': 0}
+        # Total received from Amount column
+        if 'Amount' in payments.columns:
+            metrics['total_received'] = payments['Amount'].sum()
+            metrics['avg_payment'] = payments['Amount'].mean()
+        # This month
+        if 'Date' in payments.columns:
+            payments['Date'] = pd.to_datetime(payments['Date'], errors='coerce')
+            current_month = datetime.now().month
+            current_year = datetime.now().year
+            this_month = payments[(payments['Date'].dt.month == current_month) & (payments['Date'].dt.year == current_year)]
+            metrics['month_received'] = this_month['Amount'].sum() if not this_month.empty else 0
+        # Pending from master
+        if not master.empty and 'Status' in master.columns and 'Amount' in master.columns:
+            pending = master[master['Status'] == 'Pending']
+            metrics['pending'] = pending['Amount'].sum() if not pending.empty else 0
+            projected = master[master['Status'] == 'Projected']
+            metrics['projected'] = projected['Amount'].sum() if not projected.empty else 0
+    except Exception as e:
+        st.warning(f"Metrics calculation issue: {e}")
+    return metrics
 
-# Page Content
+# Page content
 if page == "🏠 Home":
     st.title("💰 EMG Payment Dashboard")
     
-    all_metrics = safe_metrics(payments_df, master_df)
+    all_metrics = get_metrics(payments_df, master_df)
     kit_pay = filter_by_location(payments_df, KITCHENER_DOCTORS)
     lon_pay = filter_by_location(payments_df, LONDON_DOCTORS)
-    kit_metrics = safe_metrics(kit_pay, filter_by_location(master_df, KITCHENER_DOCTORS))
-    lon_metrics = safe_metrics(lon_pay, filter_by_location(master_df, LONDON_DOCTORS))
+    kit_metrics = get_metrics(kit_pay, filter_by_location(master_df, KITCHENER_DOCTORS))
+    lon_metrics = get_metrics(lon_pay, filter_by_location(master_df, LONDON_DOCTORS))
     
     st.markdown("### 📊 Combined Earnings Overview")
     c1, c2, c3, c4 = st.columns(4)
     c1.markdown(f'<div class="metric-card card-teal"><div class="card-title">💰 Total Earnings</div><div class="card-value">${all_metrics["total_received"]:,.2f}</div></div>', unsafe_allow_html=True)
-    c2.markdown(f'<div class="metric-card card-purple"><div class="card-title">📅 This Quarter</div><div class="card-value">${all_metrics["total_received"]*0.25:,.2f}</div></div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="metric-card card-blue"><div class="card-title">📅 This Year</div><div class="card-value">${all_metrics["total_received"]*0.85:,.2f}</div></div>', unsafe_allow_html=True)
-    c4.markdown(f'<div class="metric-card card-pink"><div class="card-title">⭐ THIS MONTH</div><div class="card-value">${all_metrics.get("avg_payment",0)*4:,.2f}</div></div>', unsafe_allow_html=True)
+    c2.markdown(f'<div class="metric-card card-purple"><div class="card-title">⏳ Pending</div><div class="card-value">${all_metrics["pending"]:,.2f}</div></div>', unsafe_allow_html=True)
+    c3.markdown(f'<div class="metric-card card-blue"><div class="card-title">📊 Projected</div><div class="card-value">${all_metrics["projected"]:,.2f}</div></div>', unsafe_allow_html=True)
+    c4.markdown(f'<div class="metric-card card-pink"><div class="card-title">⭐ This Month</div><div class="card-value">${all_metrics["month_received"]:,.2f}</div></div>', unsafe_allow_html=True)
     
     st.markdown("---")
     st.markdown("### 📍 Income by Location")
@@ -107,14 +121,14 @@ elif page == "🏥 Kitchener Tracker":
     
     kit_pay = filter_by_location(payments_df, KITCHENER_DOCTORS)
     kit_master = filter_by_location(master_df, KITCHENER_DOCTORS)
-    metrics = safe_metrics(kit_pay, kit_master)
+    m = get_metrics(kit_pay, kit_master)
     
     st.markdown("### 📊 Kitchener Earnings Overview")
     c1, c2, c3, c4 = st.columns(4)
-    c1.markdown(f'<div class="metric-card card-teal"><div class="card-title">💰 Total</div><div class="card-value">${metrics["total_received"]:,.2f}</div></div>', unsafe_allow_html=True)
-    c2.markdown(f'<div class="metric-card card-purple"><div class="card-title">⏳ Pending</div><div class="card-value">${metrics.get("pending",0):,.2f}</div></div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="metric-card card-blue"><div class="card-title">📊 Projected</div><div class="card-value">${metrics.get("projected",0):,.2f}</div></div>', unsafe_allow_html=True)
-    c4.markdown(f'<div class="metric-card card-pink"><div class="card-title">📈 Avg</div><div class="card-value">${metrics.get("avg_payment",0):,.2f}</div></div>', unsafe_allow_html=True)
+    c1.markdown(f'<div class="metric-card card-teal"><div class="card-title">💰 Total</div><div class="card-value">${m["total_received"]:,.2f}</div></div>', unsafe_allow_html=True)
+    c2.markdown(f'<div class="metric-card card-purple"><div class="card-title">⏳ Pending</div><div class="card-value">${m["pending"]:,.2f}</div></div>', unsafe_allow_html=True)
+    c3.markdown(f'<div class="metric-card card-blue"><div class="card-title">📊 Projected</div><div class="card-value">${m["projected"]:,.2f}</div></div>', unsafe_allow_html=True)
+    c4.markdown(f'<div class="metric-card card-pink"><div class="card-title">📈 Avg</div><div class="card-value">${m["avg_payment"]:,.2f}</div></div>', unsafe_allow_html=True)
     
     st.markdown("---")
     if not kit_pay.empty:
@@ -128,7 +142,7 @@ elif page == "🏥 Kitchener Tracker":
     if not kit_pay.empty:
         st.dataframe(kit_pay, use_container_width=True)
     else:
-        st.info("No Kitchener payment data available.")
+        st.info("No Kitchener data.")
 
 elif page == "🏛️ London Tracker":
     st.title("🏛️ London Income Tracker")
@@ -136,14 +150,14 @@ elif page == "🏛️ London Tracker":
     
     lon_pay = filter_by_location(payments_df, LONDON_DOCTORS)
     lon_master = filter_by_location(master_df, LONDON_DOCTORS)
-    metrics = safe_metrics(lon_pay, lon_master)
+    m = get_metrics(lon_pay, lon_master)
     
     st.markdown("### 📊 London Earnings Overview")
     c1, c2, c3, c4 = st.columns(4)
-    c1.markdown(f'<div class="metric-card card-teal"><div class="card-title">💰 Total</div><div class="card-value">${metrics["total_received"]:,.2f}</div></div>', unsafe_allow_html=True)
-    c2.markdown(f'<div class="metric-card card-purple"><div class="card-title">⏳ Pending</div><div class="card-value">${metrics.get("pending",0):,.2f}</div></div>', unsafe_allow_html=True)
-    c3.markdown(f'<div class="metric-card card-blue"><div class="card-title">📊 Projected</div><div class="card-value">${metrics.get("projected",0):,.2f}</div></div>', unsafe_allow_html=True)
-    c4.markdown(f'<div class="metric-card card-pink"><div class="card-title">📈 Avg</div><div class="card-value">${metrics.get("avg_payment",0):,.2f}</div></div>', unsafe_allow_html=True)
+    c1.markdown(f'<div class="metric-card card-teal"><div class="card-title">💰 Total</div><div class="card-value">${m["total_received"]:,.2f}</div></div>', unsafe_allow_html=True)
+    c2.markdown(f'<div class="metric-card card-purple"><div class="card-title">⏳ Pending</div><div class="card-value">${m["pending"]:,.2f}</div></div>', unsafe_allow_html=True)
+    c3.markdown(f'<div class="metric-card card-blue"><div class="card-title">📊 Projected</div><div class="card-value">${m["projected"]:,.2f}</div></div>', unsafe_allow_html=True)
+    c4.markdown(f'<div class="metric-card card-pink"><div class="card-title">📈 Avg</div><div class="card-value">${m["avg_payment"]:,.2f}</div></div>', unsafe_allow_html=True)
     
     st.markdown("---")
     if not lon_pay.empty:
@@ -155,7 +169,7 @@ elif page == "🏛️ London Tracker":
     if not lon_pay.empty:
         st.dataframe(lon_pay, use_container_width=True)
     else:
-        st.info("No London payment data available.")
+        st.info("No London data.")
 
 elif page == "💸 Expense Tracker":
     st.title("💸 Expense Tracker")
@@ -167,4 +181,4 @@ elif page == "📈 Future Income":
 
 elif page == "📊 Tax Center":
     st.title("📊 Tax Center")
-    st.info("Tax calculations and reports coming soon!")
+    st.info("Tax calculations coming soon!")
