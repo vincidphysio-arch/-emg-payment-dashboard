@@ -52,9 +52,10 @@ with st.sidebar:
     st.title("Navigation")
     page = st.radio("", ["🏠 Home", "🏥 Kitchener Tracker", "🏛️ London Tracker", "💸 Expense Tracker", "📈 Future Income", "📊 Tax Center"], label_visibility="collapsed")
 
-# Load data
+# Load data from both sheets
 try:
-    payments_df, master_df = load_google_sheets_data()
+    payments_df = load_google_sheets_data("Payments")
+    master_df = load_google_sheets_data("Master_Income")
 except Exception as e:
     st.error(f"Error loading data: {e}")
     payments_df = pd.DataFrame()
