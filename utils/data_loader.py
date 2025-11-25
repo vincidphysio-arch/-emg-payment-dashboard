@@ -7,77 +7,52 @@ import pandas as pd
 import streamlit as st
 
 def load_google_sheets_data(sheet_name):
-    """
-    Load data from Google Sheets using service account credentials
-    
-    Args:
-        sheet_name (str): Name of the worksheet tab
-    
-    Returns:
-        pd.DataFrame: Data from the specified sheet
-    """
+    """Load data and normalize column names"""
     try:
         # Define scope
-        scope = [
-            'https://www.googleapis.com/auth/spreadsheets.readonly',
-            'https://www.googleapis.com/auth/drive.readonly'
-        ]
+        scope = ['https://www.googleapis.com/auth/spreadsheets.readonly']
         
-        # Load credentials from Streamlit secrets
+        # Load credentials
         credentials = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=scope
+            st.secrets["gcp_service_account"], scopes=scope
         )
         
-        # Authorize and open spreadsheet
         client = gspread.authorize(credentials)
         spreadsheet_id = st.secrets["sheets"]["spreadsheet_id"]
-        spreadsheet = client.open_by_key(spreadsheet_id)
-        worksheet = spreadsheet.worksheet(sheet_name)
+        worksheet = client.open_by_key(spreadsheet_id).worksheet(sheet_name)
         
-        # Get all values and convert to DataFrame
         data = worksheet.get_all_values()
         if not data:
             return pd.DataFrame()
         
+        # Create DataFrame
         headers = data[0]
         rows = data[1:]
         df = pd.DataFrame(rows, columns=headers)
         
-        # Type conversions
-        if 'Date' in df.columns:
-            df['Date'] = pd.to_datetime(df['Date'], format='%d/%m/%Y', errors='coerce')
+        # --- FIX 1: Rename Columns to Match Code Expectations ---
+        # Maps 'Total Earned' from Sheet -> 'Amount' for Python
+        column_mapping = {
+            'Total Earned': 'Amount',
+            'Doctor / Location': 'Doctor',
+            'Patients Seen / Type': 'Type'
+        }
+        df = df.rename(columns=column_mapping)
         
+        # --- FIX 2: Clean Currency Strings ("$750.00" -> 750.00) ---
         if 'Amount' in df.columns:
-            df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce')
-        
+            # Remove '$', ',', and empty strings
+            df['Amount'] = df['Amount'].astype(str).str.replace('$', '', regex=False)
+            df['Amount'] = df['Amount'].str.replace(',', '', regex=False)
+            df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0)
+
+        # --- FIX 3: Flexible Date Parsing ---
+        if 'Date' in df.columns:
+            # Try ISO format first (YYYY-MM-DD), then DD/MM/YYYY
+            df['Date'] = pd.to_datetime(df['Date'], format='mixed', errors='coerce')
+            
         return df
         
     except Exception as e:
         st.error(f"Error loading {sheet_name}: {str(e)}")
         return pd.DataFrame()
-
-def get_spreadsheet_info():
-    """Get basic info about the connected spreadsheet"""
-    try:
-        scope = [
-            'https://www.googleapis.com/auth/spreadsheets.readonly',
-            'https://www.googleapis.com/auth/drive.readonly'
-        ]
-        
-        credentials = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
-            scopes=scope
-        )
-        
-        client = gspread.authorize(credentials)
-        spreadsheet_id = st.secrets["sheets"]["spreadsheet_id"]
-        spreadsheet = client.open_by_key(spreadsheet_id)
-        
-        return {
-            'title': spreadsheet.title,
-            'url': spreadsheet.url,
-            'sheets': [ws.title for ws in spreadsheet.worksheets()]
-        }
-    except:
-        return None
