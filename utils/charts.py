@@ -45,13 +45,15 @@ def create_payment_timeline(payments_df, work_df):
         ))
     
     # Add today line
-    if fig.data:  # Only add vline if there's data
+    try:  # Try to add vline, skip if data is malformed
         fig.add_vline(
             x=datetime.now(),
             line_dash="dash",
             line_color="red",
             annotation_text="Today"
         )
+            except Exception:  # Skip vline if any error occurs
+        pass
     
     fig.update_layout(
         title="Payment Timeline - Past, Present & Future",
